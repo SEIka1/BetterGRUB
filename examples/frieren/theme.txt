@@ -1,8 +1,8 @@
 # Responsive layout for artwork authors and video modes without a matching icon set.
 desktop-image: "scene.jpg"
 desktop-image-scale-method: "stretch"
-desktop-lens: "windows vortex 248 383 488 360 #82e0ff 26 100"
-desktop-lens: "arch eclipse 1230 413 508 320 #ffa93e 26 100"
+desktop-lens: "windows vortex 248 383 488 360 #71dcff 56 112 48"
+desktop-lens: "arch eclipse 1230 413 508 320 #ff993e 46 102 42 windows"
 title-text: ""
 terminal-font: "DejaVu Sans Regular 15"
 

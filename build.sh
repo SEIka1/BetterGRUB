@@ -22,6 +22,7 @@ src="$scratch/grub-$version"
 patch -d "$src" -p1 < "$project/patches/grub-2.14.patch"
 cp "$project/src/gfxmenu_lens.h" "$src/include/grub/gfxmenu_lens.h"
 cp "$project/src/lens.inc" "$src/grub-core/gfxmenu/lens.inc"
+cp "$project/src/spell.inc" "$src/grub-core/gfxmenu/spell.inc"
 mkdir "$scratch/obj"
 cd "$scratch/obj"
 "$src/configure" --prefix=/usr --target=x86_64 --with-platform=efi \
@@ -35,7 +36,9 @@ mkdir -p "$grub/x86_64-efi" "$grub/themes" "$grub/fonts"
 ./grub-mkimage -O x86_64-efi -d "$modules" -p /EFI/BetterGRUB/grub \
     -o "$profile/BetterGRUB.efi" part_gpt part_msdos fat
 cp "$modules"/*.mod "$modules"/*.lst "$grub/x86_64-efi/"
-cp -R "$project/examples/frieren" "$project/examples/binary-stars" "$grub/themes/"
+for name in frieren binary-stars drakengard3 nier-automata minecraft; do
+    cp -R "$project/examples/$name" "$grub/themes/"
+done
 cp "$project/examples/fonts/"* "$grub/fonts/"
 cp "$project/examples/grub.cfg" "$grub/grub.cfg"
 ./grub-script-check "$grub/grub.cfg"

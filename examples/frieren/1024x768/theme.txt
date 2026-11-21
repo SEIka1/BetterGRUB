@@ -1,5 +1,5 @@
-desktop-lens: "windows vortex 248 383 488 360 #82e0ff 26 100"
-desktop-lens: "arch eclipse 1230 413 508 320 #ffa93e 26 100"
+desktop-lens: "windows vortex 248 383 488 360 #71dcff 56 112 48"
+desktop-lens: "arch eclipse 1230 413 508 320 #ff993e 46 102 42 windows"
 desktop-lens-icons: "replace"
 desktop-image: "../scene.jpg"
 desktop-image-scale-method: "stretch"

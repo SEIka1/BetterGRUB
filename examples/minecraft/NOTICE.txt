@@ -1,0 +1,17 @@
+Minegrub world-selection artwork, and console and scrollbar
+pixmaps by Lxtharia and contributors. Upstream commit:
+https://github.com/Lxtharia/minegrub-world-sel-theme/tree/55045f30796b3e993b40e7ab7e014c2e8512d436
+See LICENSE-world.txt.
+
+Minegrub panorama, logo and title button pixmaps by Lxtharia and
+contributors. Upstream commit:
+https://github.com/Lxtharia/minegrub-theme/tree/e437b059e96e902fd09a192469dc96056858d2a5
+See LICENSE-title.txt.
+
+The two-screen interaction is adapted from Lxtharia's double-menu project:
+https://github.com/Lxtharia/double-minegrub-menu
+The stock-GRUB world browser shows the configured boot entry labels.
+
+The public demo uses ASCII subsets of Monocraft v4.2.1 by Idrees Hassan.
+https://github.com/IdreesInc/Monocraft/releases/tag/v4.2.1
+See LICENSE-Monocraft.txt.

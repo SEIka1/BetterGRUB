@@ -10,17 +10,29 @@ struct lens_region
   unsigned focus;
 };
 
+#define LENS_FLOW_BINS 8
+
+struct lens_flow
+{
+  struct lens_region *source, *sink;
+  grub_video_rect_t bounds;
+  grub_uint8_t *original;
+  int ux, uy, distance, reach, depth;
+  grub_video_rect_t last[LENS_FLOW_BINS];
+};
+
 struct grub_lens_animation
 {
   struct lens_region regions[GRUB_LENS_MAX];
-  unsigned count;
+  struct lens_flow flows[GRUB_LENS_MAX];
+  unsigned count, flow_count;
   grub_uint64_t started, last_frame;
 };
 
 struct lens_word { const char *start; unsigned length; };
 
 static unsigned
-lens_words (const char *value, struct lens_word words[9])
+lens_words (const char *value, struct lens_word words[11])
 {
   unsigned count = 0;
   while (value && *value)
@@ -30,7 +42,7 @@ lens_words (const char *value, struct lens_word words[9])
         value++;
       if (!*value)
         break;
-      if (count == 9)
+      if (count == 11)
         return 0;
       start = value;
       while (*value && *value != ' ' && *value != '\t')
@@ -55,7 +67,7 @@ lens_number (struct lens_word word, unsigned limit, unsigned *value)
   for (i = 0; i < word.length; i++)
     {
       unsigned digit = (unsigned char) word.start[i] - '0';
-      if (digit > 9 || n > (limit - digit) / 10)
+      if (digit > 9 || digit > limit || n > (limit - digit) / 10)
         return 0;
       n = n * 10 + digit;
     }
@@ -85,23 +97,33 @@ lens_color (struct lens_word word, unsigned char color[3])
   return 1;
 }
 
+static int
+lens_class (struct lens_word word, char name[64])
+{
+  unsigned i;
+  if (!word.length || word.length >= 64)
+    return 0;
+  for (i = 0; i < word.length; i++)
+    {
+      char c = word.start[i];
+      if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+            || (c >= '0' && c <= '9') || c == '-' || c == '_'))
+        return 0;
+    }
+  grub_memcpy (name, word.start, word.length);
+  name[word.length] = 0;
+  return 1;
+}
+
 void
 grub_gfxmenu_lens_add (grub_gfxmenu_view_t view, const char *value)
 {
   struct grub_lens_theme *theme = &view->lens_theme;
   struct grub_lens_spec spec = { .particles = 26, .speed = 100 };
-  struct lens_word words[9];
+  struct lens_word words[11];
   unsigned i, n = lens_words (value, words);
-  if (theme->count >= GRUB_LENS_MAX || n < 7 || words[0].length >= sizeof (spec.class_name))
+  if (theme->count >= GRUB_LENS_MAX || n < 7 || !lens_class (words[0], spec.class_name))
     return;
-  for (i = 0; i < words[0].length; i++)
-    {
-      char c = words[0].start[i];
-      if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-            || (c >= '0' && c <= '9') || c == '-' || c == '_'))
-        return;
-    }
-  grub_memcpy (spec.class_name, words[0].start, words[0].length);
   spec.eclipse = lens_word_is (words[1], "eclipse");
   if ((!spec.eclipse && !lens_word_is (words[1], "vortex"))
       || !lens_number (words[2], IMAGE_HW_MAX_PX, &spec.x)
@@ -110,7 +132,9 @@ grub_gfxmenu_lens_add (grub_gfxmenu_view_t view, const char *value)
       || !lens_number (words[5], IMAGE_HW_MAX_PX, &spec.height)
       || spec.width < 8 || spec.height < 8 || !lens_color (words[6], spec.color)
       || (n >= 8 && !lens_number (words[7], 64, &spec.particles))
-      || (n == 9 && (!lens_number (words[8], 200, &spec.speed) || spec.speed < 25)))
+      || (n >= 9 && (!lens_number (words[8], 200, &spec.speed) || spec.speed < 25))
+      || (n >= 10 && !lens_number (words[9], 100, &spec.ambient))
+      || (n == 11 && !lens_class (words[10], spec.source_class)))
     return;
   for (i = 0; i < theme->count; i++)
     if (grub_strcmp (theme->specs[i].class_name, spec.class_name) == 0)
@@ -143,8 +167,13 @@ lens_free (struct grub_lens_animation *animation)
       grub_free (animation->regions[i].original);
       grub_free (animation->regions[i].x_squared);
     }
+  for (i = 0; i < animation->flow_count; i++)
+    grub_free (animation->flows[i].original);
   grub_free (animation);
 }
+
+static void lens_prepare_flows (struct grub_lens_animation *animation,
+                                const struct grub_video_bitmap *image);
 
 static void
 lens_start (grub_gfxmenu_view_t view)
@@ -195,10 +224,12 @@ lens_start (grub_gfxmenu_view_t view)
       region = &animation->regions[animation->count++];
       region->bounds = r;
       region->spec = s;
-      region->original = grub_malloc (r.width * r.height * bytes);
+      /* The packed RGB sampler may read one padding byte after the last triplet. */
+      region->original = grub_malloc (r.width * r.height * bytes + 1);
       region->x_squared = grub_malloc (r.width * sizeof (*region->x_squared));
       if (!region->original || !region->x_squared)
         goto fallback;
+      region->original[r.width * r.height * bytes] = 0;
       for (col = 0; col < r.width; col++)
         {
           int rx = r.width / 2;
@@ -213,6 +244,7 @@ lens_start (grub_gfxmenu_view_t view)
     }
   if (!animation->count)
     goto fallback;
+  lens_prepare_flows (animation, image);
   animation->started = animation->last_frame = grub_get_time_ms ();
   view->lenses = animation;
   return;
@@ -235,6 +267,8 @@ lens_clamp (int value, int upper)
 {
   return value < 0 ? 0 : grub_min (value, upper);
 }
+
+#include "spell.inc"
 
 static void
 lens_sparks (grub_uint8_t *dst, unsigned pitch, unsigned bytes, const struct lens_region *region,
@@ -263,6 +297,17 @@ lens_sparks (grub_uint8_t *dst, unsigned pitch, unsigned bytes, const struct len
     }
 }
 
+/* Two 8-bit channels per product. The weights sum to 256, so each accumulated
+   channel and its rounding bias fit in a 16-bit lane without a carry. */
+static inline unsigned
+lens_pair (unsigned a, unsigned b, unsigned c, unsigned d,
+           int wa, int wb, int wc, int wd)
+{
+  const unsigned mask = 0x00ff00ff;
+  return (((a & mask) * wa + (b & mask) * wb + (c & mask) * wc + (d & mask) * wd
+           + 0x00800080) >> 8) & mask;
+}
+
 static void
 lens_render (struct grub_video_bitmap *image, const struct lens_region *region, unsigned elapsed)
 {
@@ -275,7 +320,8 @@ lens_render (struct grub_video_bitmap *image, const struct lens_region *region, 
   elapsed = (unsigned) ((grub_uint64_t) elapsed * region->spec->speed / 100);
   unsigned rotation = elapsed / (eclipse ? 3 : 2);
   int radius, y;
-  for (radius = 0; region->focus && radius < 256; radius++)
+  int ambient = region->spec->ambient, focus = spell_ease (region->focus);
+  for (radius = 0; (ambient || region->focus) && radius < 256; radius++)
     {
       int edge = 256 - radius;
       int core = lens_clamp ((radius - (eclipse ? 3 : 0)) * (eclipse ? 18 : 30), 256);
@@ -285,13 +331,32 @@ lens_render (struct grub_video_bitmap *image, const struct lens_region *region, 
       field[radius].pull = influence * ((eclipse ? 52 : 33) + pulse / 6) / 256;
       field[radius].bend = influence * ((eclipse ? 92 : 36) + shear / 4) / 256;
       field[radius].light = influence * grub_max (pulse, 0) / (eclipse ? 1370 : 1180);
+      if (ambient)
+        {
+          int plateau = eclipse ? 12 : 44;
+          int shoulder = 256 - lens_clamp ((radius - plateau) * 256 / (256 - plateau), 256);
+          int envelope = shoulder * shoulder >> 8;
+          int inner = lens_clamp ((80 - radius) * 256 / 80, 256);
+          /* Idle refraction stays close to the core. Particles still cross the entire surface. */
+          envelope = envelope * spell_lerp (inner, 256, focus) >> 8;
+          int activity = ambient + ((256 - ambient) * focus >> 8);
+          int ring = lens_wave (rotation + 10 * radius);
+          int shell = lens_clamp ((radius - (eclipse ? 11 : 0)) * (eclipse ? 6 : 10), 256);
+          int twist = eclipse ? 56 + shear / 4 : shear / 3 + ring / 6;
+          field[radius].pull = envelope * (focus * (eclipse ? 118 : 161) / 256
+                                 + activity * (12 + (ring * shell / 256) / (eclipse ? 10 : 7)) / 256) / 256;
+          field[radius].bend = (((envelope * shell >> 8) * activity) >> 8) * twist / 256;
+          field[radius].light = ((envelope * activity >> 8) * (33 + pulse / 8)) >> 8;
+        }
     }
   for (y = 0; y < h; y++)
     {
       int x, dy = y - ry, ny = dy * sy / 256, ny2 = ny * ny;
       int ray = eclipse ? lens_clamp (((dy < 0 ? -dy : dy) * 160 / ry - 4) * 15, 256) : 256;
       grub_uint8_t *out = dst + y * pitch;
-      if (!region->focus)
+      if (ambient)
+        grub_memcpy (out, region->original + y * w * bytes, w * bytes);
+      else if (!region->focus)
         {
           grub_memcpy (out, region->original + y * w * bytes, w * bytes);
           continue;
@@ -300,29 +365,54 @@ lens_render (struct grub_video_bitmap *image, const struct lens_region *region, 
         {
           int dx = x - rx, pull, bend, lx, ly, fx, fy, light;
           const grub_uint8_t *top, *bottom;
-          unsigned c;
+          unsigned a, b, c, d, rb, ga;
+          int wa, wb, wc, wd;
           radius = (region->x_squared[x] + ny2) >> 8;
           if (radius >= 256)
             continue;
           pull = field[radius].pull;
           bend = field[radius].bend;
           light = field[radius].light;
+          if (ambient && !(pull | bend | light))
+            continue;
           lx = lens_clamp (x * 16 - (dx * pull + dy * bend) / 16, (w - 1) * 16 - 1);
-          ly = lens_clamp (y * 16 - ((dy * pull - dx * bend) / 16) * ray / 256, (h - 1) * 16 - 1);
+          if (ambient)
+            {
+              int shift = dx * bend * ray / 256;
+              if (eclipse)
+                {
+                  /* Light on each side of the horizon stays on that side of the beam. */
+                  int limit = grub_abs (dy) * (256 - pull) / 2;
+                  shift = grub_max (-limit, grub_min (shift, limit));
+                }
+              ly = lens_clamp (y * 16 - (dy * pull - shift) / 16, (h - 1) * 16 - 1);
+            }
+          else
+            ly = lens_clamp (y * 16 - ((dy * pull - dx * bend) / 16) * ray / 256, (h - 1) * 16 - 1);
           fx = lx & 15;
           fy = ly & 15;
           top = region->original + ((ly >> 4) * w + (lx >> 4)) * bytes;
           bottom = top + w * bytes;
-          for (c = 0; c < bytes; c++)
-            {
-              int a = (16 - fx) * top[c] + fx * top[bytes + c];
-              int b = (16 - fx) * bottom[c] + fx * bottom[bytes + c];
-              int sample = ((16 - fy) * a + fy * b + 128) >> 8;
-              out[c] = c == 3 ? sample : grub_min (sample + ((sample * light) >> 8), 255);
-            }
+          a = grub_le_to_cpu32 (grub_get_unaligned32 (top));
+          b = grub_le_to_cpu32 (grub_get_unaligned32 (top + bytes));
+          c = grub_le_to_cpu32 (grub_get_unaligned32 (bottom));
+          d = grub_le_to_cpu32 (grub_get_unaligned32 (bottom + bytes));
+          wa = (16 - fx) * (16 - fy);
+          wb = fx * (16 - fy);
+          wc = (16 - fx) * fy;
+          wd = fx * fy;
+          rb = lens_pair (a, b, c, d, wa, wb, wc, wd);
+          ga = lens_pair (a >> 8, b >> 8, c >> 8, d >> 8, wa, wb, wc, wd);
+          out[0] = grub_min (((rb & 255) * (256 + light)) >> 8, 255U);
+          out[1] = grub_min (((ga & 255) * (256 + light)) >> 8, 255U);
+          out[2] = grub_min (((rb >> 16) * (256 + light)) >> 8, 255U);
+          if (bytes == 4)
+            out[3] = ga >> 16;
         }
     }
-  if (region->focus)
+  if (ambient)
+    spell_emission (image, region, elapsed, focus);
+  else if (region->focus)
     lens_sparks (dst, pitch, bytes, region, elapsed);
 }
 
@@ -332,25 +422,38 @@ grub_gfxmenu_lens_idle (void *data)
   grub_gfxmenu_view_t view = data;
   struct grub_lens_animation *a = view->lenses;
   grub_uint64_t now = grub_get_time_ms (), delta = now - a->last_frame;
-  grub_video_rect_t dirty[GRUB_LENS_MAX];
-  unsigned step, count = 0, i, pass;
+  grub_video_rect_t dirty[(1 + LENS_FLOW_BINS) * GRUB_LENS_MAX];
+  unsigned step, count = 0, region_count, i, pass;
   int selected;
   if (delta < 33)
     return;
   a->last_frame = now;
   selected = grub_gfxmenu_lens_index (view, grub_menu_get_entry (view->menu, view->selected));
   step = grub_min (delta, (grub_uint64_t) 256);
+  /* Restore last frame's streams before either endpoint is redrawn. */
+  for (i = 0; i < a->flow_count; i++)
+    spell_restore_flow (view->scaled_desktop_image, &a->flows[i]);
   for (i = 0; i < a->count; i++)
     {
       struct lens_region *r = &a->regions[i];
+      unsigned fade = r->spec->ambient ? (step + 1) / 2 : step;
       if (selected == (int) i)
-        r->focus = grub_min (r->focus + step, 256U);
+        r->focus = grub_min (r->focus + fade, 256U);
       else if (r->focus)
-        r->focus -= grub_min (r->focus, step);
-      else
+        r->focus -= grub_min (r->focus, fade);
+      else if (!r->spec->ambient)
         continue;
       lens_render (view->scaled_desktop_image, r, (unsigned) (now - a->started));
       dirty[count++] = r->bounds;
+    }
+  region_count = count;
+  for (i = 0; i < a->flow_count; i++)
+    {
+      struct lens_flow *flow = &a->flows[i];
+      grub_video_rect_t paint[LENS_FLOW_BINS] = {{0}};
+      if (flow->sink->focus)
+        spell_draw_flow (view->scaled_desktop_image, flow, (unsigned) (now - a->started), paint);
+      count += spell_dirty_flow (flow, paint, dirty, region_count, dirty + count);
     }
   if (!count)
     return;

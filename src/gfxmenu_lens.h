@@ -7,8 +7,9 @@
 struct grub_lens_spec
 {
   char class_name[64];
+  char source_class[64];
   unsigned x, y, width, height;
-  unsigned eclipse, particles, speed;
+  unsigned eclipse, particles, speed, ambient;
   unsigned char color[3];
 };
 

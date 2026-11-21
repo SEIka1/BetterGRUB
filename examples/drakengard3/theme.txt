@@ -1,0 +1,59 @@
+desktop-image: "background.jpg"
+desktop-image-scale-method: "stretch"
+desktop-color: "#130b13"
+title-text: ""
+terminal-font: "DejaVu Sans Regular 15"
+
++ boot_menu {
+    left = 10%
+    top = 38%
+    width = 36%
+    height = 53%
+    item_font = "DejaVu Sans Regular 23"
+    item_color = "#e2cac9"
+    selected_item_color = "#ffe6d1"
+    icon_width = 24
+    icon_height = 24
+    item_icon_space = 12
+    item_height = 44
+    item_padding = 0
+    item_spacing = 7
+    item_pixmap_style = "plain_*.png"
+    selected_item_pixmap_style = "select_*.png"
+    scrollbar = false
+}
+
++ label {
+    id = "__timeout__"
+    left = 10%
+    top = 72%
+    width = 36%
+    height = 22
+    text = "Windows in %d s"
+    font = "DejaVu Sans Regular 15"
+    color = "#e2cac9"
+    align = "left"
+}
+
++ progress_bar {
+    id = "__timeout__"
+    left = 10%
+    top = 72%+25
+    width = 20%
+    height = 4
+    show_text = false
+    fg_color = "#df8181"
+    bg_color = "#130b13"
+    border_color = "#632f3b"
+}
+
++ label {
+    left = 10%
+    top = 91%
+    width = 45%
+    height = 24
+    text = "Arrow keys: Select    Enter: Confirm"
+    font = "DejaVu Sans Regular 15"
+    color = "#e2cac9"
+    align = "left"
+}
