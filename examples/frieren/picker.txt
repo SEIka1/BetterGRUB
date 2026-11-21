@@ -1,0 +1,49 @@
+desktop-image: "background.jpg"
+desktop-image-scale-method: "stretch"
+desktop-color: "#0b0f1e"
+title-text: ""
+terminal-font: "DejaVu Sans Regular 15"
+
++ boot_menu {
+    left = 10%
+    top = 38%
+    width = 36%
+    height = 53%
+    item_font = "DejaVu Sans Regular 23"
+    item_color = "#e1d6f4"
+    selected_item_color = "#f7ebff"
+    icon_width = 24
+    icon_height = 24
+    item_icon_space = 12
+    item_height = 44
+    item_padding = 0
+    item_spacing = 7
+    item_pixmap_style = "plain_*.png"
+    selected_item_pixmap_style = "select_*.png"
+    scrollbar = false
+}
+
++ progress_bar {
+    id = "__timeout__"
+    left = 10%
+    top = 72%+25
+    width = 20%
+    height = 4
+    show_text = false
+    fg_color = "#bca4e5"
+    bg_color = "#0b0f1e"
+    border_color = "#433a65"
+}
+
++ circular_progress {
+    id = "__timeout__"
+    left = 43%
+    top = 42%
+    width = 16%
+    height = 28%
+    center_bitmap = "spell-center.png"
+    tick_bitmap = "spell-tick.png"
+    num_ticks = 30
+    start_angle = "-90 deg"
+    ticks_disappear = true
+}

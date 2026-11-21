@@ -1,0 +1,210 @@
+--- a/include/grub/menu_viewer.h
++++ b/include/grub/menu_viewer.h
+@@ -34,6 +34,7 @@
+   void (*print_timeout) (int timeout, void *data);
+   void (*clear_timeout) (void *data);
+   void (*fini) (void *fini);
++  void (*idle) (void *data);
+ };
+ 
+ void grub_menu_register_viewer (struct grub_menu_viewer *viewer);
+--- a/grub-core/normal/menu.c
++++ b/grub-core/normal/menu.c
+@@ -701,6 +701,14 @@
+ 
+       c = grub_getkey_noblock ();
+ 
++      if (c == GRUB_TERM_NO_KEY)
++        {
++          struct grub_menu_viewer *viewer;
++          for (viewer = viewers; viewer; viewer = viewer->next)
++            if (viewer->idle)
++              viewer->idle (viewer->data);
++        }
++
+       /* Negative values are returned on error. */
+       if ((c != GRUB_TERM_NO_KEY) && (c > 0))
+ 	{
+--- a/include/grub/gfxmenu_view.h
++++ b/include/grub/gfxmenu_view.h
+@@ -43,6 +43,10 @@
+ grub_err_t grub_gui_recreate_box (grub_gfxmenu_box_t *boxptr,
+                                   const char *pattern, const char *theme_dir);
+ 
++void grub_gfxmenu_lens_add (grub_gfxmenu_view_t view, const char *value);
++int grub_gfxmenu_lens_index (grub_gfxmenu_view_t view, grub_menu_entry_t entry);
++void grub_gfxmenu_lens_idle (void *data);
++
+ void grub_gfxmenu_view_draw (grub_gfxmenu_view_t view);
+ 
+ void
+@@ -79,6 +83,7 @@
+ #include <grub/gui.h>
+ #include <grub/gfxwidgets.h>
+ #include <grub/icon_manager.h>
++#include <grub/gfxmenu_lens.h>
+ 
+ /* Definition of the private representation of the view.  */
+ struct grub_gfxmenu_view
+@@ -109,6 +114,8 @@
+   grub_gui_container_t canvas;
+ 
+   int double_repaint;
++  struct grub_lens_theme lens_theme;
++  struct grub_lens_animation *lenses;
+ 
+   int selected;
+ 
+--- a/grub-core/gfxmenu/theme_loader.c
++++ b/grub-core/gfxmenu/theme_loader.c
+@@ -226,6 +226,10 @@
+                            "Unsupported vertical align method: %s",
+                            value);
+     }
++  else if (! grub_strcmp ("desktop-lens", name))
++    grub_gfxmenu_lens_add (view, value);
++  else if (! grub_strcmp ("desktop-lens-icons", name))
++    view->lens_theme.replace_icons = value && grub_strcmp (value, "replace") == 0;
+   else if (! grub_strcmp ("desktop-color", name))
+      grub_video_parse_color (value, &view->desktop_color);
+   else if (! grub_strcmp ("terminal-box", name))
+--- a/grub-core/gfxmenu/view.c
++++ b/grub-core/gfxmenu/view.c
+@@ -43,6 +43,8 @@
+ static void
+ init_background (grub_gfxmenu_view_t view);
+ static grub_gfxmenu_view_t term_view;
++static void lens_start (grub_gfxmenu_view_t view);
++static void lens_free (struct grub_lens_animation *animation);
+ 
+ /* Create a new view object, loading the theme specified by THEME_PATH and
+    associating MODEL with the view.  */
+@@ -93,6 +95,8 @@
+   view->title_color = default_fg_color;
+   view->message_color = default_bg_color;
+   view->message_bg_color = default_fg_color;
++  grub_memset (&view->lens_theme, 0, sizeof (view->lens_theme));
++  view->lenses = NULL;
+   view->raw_desktop_image = 0;
+   view->scaled_desktop_image = 0;
+   view->desktop_image_scale_method = GRUB_VIDEO_BITMAP_SELECTION_METHOD_STRETCH;
+@@ -134,6 +138,7 @@
+       grub_gfxmenu_timeout_notifications = grub_gfxmenu_timeout_notifications->next;
+       grub_free (p);
+     }
++  lens_free (view->lenses);
+   grub_video_bitmap_destroy (view->raw_desktop_image);
+   grub_video_bitmap_destroy (view->scaled_desktop_image);
+   if (view->terminal_box)
+@@ -345,6 +350,7 @@
+   init_terminal (view);
+ 
+   init_background (view);
++  lens_start (view);
+ 
+   /* Clear the screen; there may be garbage left over in video memory. */
+   grub_video_fill_rect (grub_video_map_rgb (0, 0, 0),
+@@ -653,3 +659,5 @@
+ };
+ 
+ #endif
++
++#include "lens.inc"
+--- a/grub-core/gfxmenu/gfxmenu.c
++++ b/grub-core/gfxmenu/gfxmenu.c
+@@ -118,6 +118,8 @@
+ 
+   grub_gfxmenu_view_draw (view);
+ 
++  if (view->lenses)
++    instance->idle = grub_gfxmenu_lens_idle;
+   instance->data = view;
+   instance->set_chosen_entry = grub_gfxmenu_set_chosen_entry;
+   instance->fini = grub_gfxmenu_viewer_fini;
+--- a/grub-core/gfxmenu/gui_list.c
++++ b/grub-core/gfxmenu/gui_list.c
+@@ -231,6 +231,8 @@
+   if (! entry)
+     return 0;
+ 
++  if (self->view->lens_theme.replace_icons && grub_gfxmenu_lens_index (self->view, entry) >= 0)
++    return NULL;
+   return grub_gfxmenu_icon_manager_get_icon (self->icon_manager, entry);
+ }
+ 
+--- a/include/grub/video.h
++++ b/include/grub/video.h
+@@ -402,6 +402,8 @@
+   grub_err_t (*get_edid) (struct grub_video_edid_info *edid_info);
+ 
+   void (*print_adapter_specific_info) (void);
++  /* Optional partial update for adapters that keep a shadow framebuffer. */
++  grub_err_t (*present_rects) (const grub_video_rect_t *rects, unsigned count);
+ };
+ typedef struct grub_video_adapter *grub_video_adapter_t;
+ 
+@@ -522,6 +524,8 @@
+ grub_err_t grub_video_scroll (grub_video_color_t color, int dx, int dy);
+ 
+ grub_err_t EXPORT_FUNC (grub_video_swap_buffers) (void);
++grub_err_t EXPORT_FUNC (grub_video_present_rects) (const grub_video_rect_t *rects,
++                                                   unsigned count);
+ 
+ grub_err_t EXPORT_FUNC (grub_video_create_render_target) (struct grub_video_render_target **result,
+ 							  unsigned int width,
+--- a/grub-core/video/video.c
++++ b/grub-core/video/video.c
+@@ -396,6 +396,14 @@
+   return grub_video_adapter_active->swap_buffers ();
+ }
+ 
++grub_err_t
++grub_video_present_rects (const grub_video_rect_t *rects, unsigned count)
++{
++  if (grub_video_adapter_active && grub_video_adapter_active->present_rects)
++    return grub_video_adapter_active->present_rects (rects, count);
++  return grub_video_swap_buffers ();
++}
++
+ /* Create new render target.  */
+ grub_err_t
+ grub_video_create_render_target (struct grub_video_render_target **result,
+--- a/grub-core/video/efi_gop.c
++++ b/grub-core/video/efi_gop.c
+@@ -531,6 +531,28 @@
+ 		GRUB_EFI_BLT_BUFFER_TO_VIDEO, 0, 0, 0, 0,
+ 		framebuffer.mode_info.width, framebuffer.mode_info.height,
+ 		framebuffer.mode_info.width * 4);
++    }
++  return GRUB_ERR_NONE;
++}
++
++static grub_err_t
++grub_video_gop_present_rects (const grub_video_rect_t *rects, unsigned count)
++{
++  unsigned i;
++  unsigned w = framebuffer.mode_info.width, h = framebuffer.mode_info.height;
++  if (!framebuffer.offscreen)
++    return GRUB_ERR_NONE;  /* Drawing already targeted video memory. */
++  for (i = 0; i < count; i++)
++    {
++      const grub_video_rect_t *r = &rects[i];
++      if (!r->width || !r->height)
++        continue;
++      if (r->x >= w || r->y >= h || r->width > w - r->x || r->height > h - r->y)
++        return grub_video_gop_swap_buffers ();
++      if (gop->blt (gop, framebuffer.offscreen, GRUB_EFI_BLT_BUFFER_TO_VIDEO,
++                    r->x, r->y, r->x, r->y, r->width, r->height, w * 4)
++          != GRUB_EFI_SUCCESS)
++        return grub_video_gop_swap_buffers ();
+     }
+   return GRUB_ERR_NONE;
+ }
+@@ -598,6 +620,7 @@
+     .blit_render_target = grub_video_fb_blit_render_target,
+     .scroll = grub_video_fb_scroll,
+     .swap_buffers = grub_video_gop_swap_buffers,
++    .present_rects = grub_video_gop_present_rects,
+     .create_render_target = grub_video_fb_create_render_target,
+     .delete_render_target = grub_video_fb_delete_render_target,
+     .set_active_render_target = grub_video_gop_set_active_render_target,

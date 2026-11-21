@@ -1,0 +1,19 @@
+# Responsive layout for artwork authors and video modes without a matching icon set.
+desktop-image: "scene.jpg"
+desktop-image-scale-method: "stretch"
+desktop-lens: "windows vortex 248 383 488 360 #82e0ff 26 100"
+desktop-lens: "arch eclipse 1230 413 508 320 #ffa93e 26 100"
+title-text: ""
+terminal-font: "DejaVu Sans Regular 15"
+
++ boot_menu {
+    left = 6%
+    top = 74%
+    width = 45%
+    height = 25%
+    item_font = "DejaVu Sans Regular 23"
+    item_height = 28
+    item_color = "#c6c1d6"
+    selected_item_color = "#ffffff"
+    scrollbar = false
+}

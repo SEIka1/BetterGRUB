@@ -1,0 +1,23 @@
+desktop-image: "sky.png"
+desktop-image-scale-method: "stretch"
+desktop-lens: "frost vortex 105 174 340 250 #87e2ec 18 130"
+desktop-lens: "ember eclipse 740 190 360 260 #ffb66a 34 75"
+title-text: "Binary Stars"
+title-color: "#e4e5de"
+title-font: "DejaVu Sans Regular 23"
+terminal-font: "DejaVu Sans Regular 15"
+
++ boot_menu {
+    left = 10%
+    top = 72%
+    width = 55%
+    height = 26%
+    item_font = "DejaVu Sans Regular 23"
+    item_color = "#8e9ba7"
+    selected_item_color = "#ffffff"
+    icon_width = 0
+    icon_height = 0
+    item_height = 28
+    item_spacing = 3
+    scrollbar = false
+}

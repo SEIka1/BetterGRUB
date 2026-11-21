@@ -1,0 +1,38 @@
+desktop-lens: "windows vortex 248 383 488 360 #82e0ff 26 100"
+desktop-lens: "arch eclipse 1230 413 508 320 #ffa93e 26 100"
+desktop-lens-icons: "replace"
+desktop-image: "../scene.jpg"
+desktop-image-scale-method: "stretch"
+desktop-color: "#111226"
+title-text: ""
+terminal-font: "DejaVu Sans Regular 15"
+
+# A single-row list follows GRUB's focused entry and uses its class icon as a full-size overlay.
++ boot_menu {
+    left = 0
+    top = 0
+    width = 1920
+    height = 1080
+    icon_width = 1920
+    icon_height = 1080
+    item_height = 1080
+    item_padding = 0
+    item_spacing = 0
+    item_icon_space = 0
+    item_color = "0,0,0,0"
+    selected_item_color = "0,0,0,0"
+    scrollbar = false
+}
+
++ circular_progress {
+    id = "__timeout__"
+    left = 17%
+    top = 39%
+    width = 17%
+    height = 27%
+    center_bitmap = "../spell-center.png"
+    tick_bitmap = "../spell-tick.png"
+    num_ticks = 30
+    start_angle = "-90 deg"
+    ticks_disappear = true
+}
